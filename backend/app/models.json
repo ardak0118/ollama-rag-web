@@ -1,0 +1,17 @@
+[
+    "qwen:7b",
+    "qwen:14b",
+    "qwen:72b",
+    "qwen:latest",
+    "llama2:7b",
+    "llama2:13b",
+    "llama2:70b",
+    "codellama:7b",
+    "codellama:13b",
+    "codellama:34b",
+    "mistral:7b",
+    "mixtral:8x7b",
+    "neural-chat:7b",
+    "yi:6b",
+    "yi:34b"
+] 
