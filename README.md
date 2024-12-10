@@ -86,21 +86,37 @@ npm run build
 ## 项目结构
 
 ollama-rag-web/
+
 ├── backend/
+
 │ ├── app/
+
 │ │ ├── main.py # FastAPI 主应用
+
 │ │ ├── document_processor.py # 文档处理
+
 │ │ ├── rag_service.py # RAG 服务
+
 │ │ ├── rag_optimizers.py # RAG 优化器
+
 │ │ └── models.json # 模型配置
+
 │ └── requirements.txt
+
 ├── frontend/
+
 │ ├── src/
+
 │ │ ├── components/ # Vue 组件
+
 │ │ ├── router/ # 路由配置
+
 │ │ └── utils/ # 工具函数
+
 │ └── package.json
+
 └── README.md
+
 
 ## 配置说明
 
