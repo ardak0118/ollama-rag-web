@@ -59,23 +59,32 @@ source venv/bin/activate # Linux/MacOS
 
 cd backend
 pip install -r requirements.txt
+
 初始化数据库
 
 python init_db.py
+
 启动后端服务
 
 python run.py
 
 ### 4. 前端设置
 安装依赖
+
 cd frontend
+
 npm install
+
 启动开发服务器
+
 npm run dev
+
 构建生产版本
+
 npm run build
 
 ## 项目结构
+
 ollama-rag-web/
 ├── backend/
 │ ├── app/
