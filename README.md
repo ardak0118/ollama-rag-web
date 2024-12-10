@@ -38,7 +38,6 @@
 ## 快速开始
 
 ### 1. 安装 Ollama
-bash
 ## Linux/MacOS
 curl -fsSL https://ollama.com/install.sh | sh
 Windows
@@ -49,16 +48,24 @@ ollama run qwen2.5:latest
 
 ### 3. 后端设置
 创建虚拟环境
+
 python -m venv venv
+
 source venv/bin/activate # Linux/MacOS
+
 .\venv\Scripts\activate # Windows
+
 安装依赖
+
 cd backend
 pip install -r requirements.txt
 初始化数据库
+
 python init_db.py
 启动后端服务
+
 python run.py
+
 ### 4. 前端设置
 安装依赖
 cd frontend
