@@ -1,64 +1,96 @@
 import { authStore } from '../store/auth'
 
-// 创建基础 API URL 配置
-const BASE_URL = 'http://localhost:8000'
+// 根据环境设置基础 URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
-export const api = {
-  async request(endpoint, options = {}) {
+class Api {
+  constructor() {
+    this.baseUrl = API_BASE_URL
+  }
+
+  async get(endpoint, options = {}) {
     const token = localStorage.getItem('token')
+    const url = endpoint.startsWith('/api') ? endpoint : `${this.baseUrl}${endpoint}`
     
-    // 如果是 FormData，不要设置 Content-Type，让浏览器自动设置
-    const headers = options.body instanceof FormData 
-      ? { 
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          ...options.headers 
-        }
-      : {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          ...options.headers
-        }
-
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      ...options,
-      headers
-    })
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        localStorage.removeItem('token')
-        window.location.href = '/login'
-      }
-      const errorText = await response.text()
-      throw new Error(`Request failed: ${errorText}`)
-    }
-
-    return response
-  },
-
-  async get(endpoint) {
-    return this.request(endpoint, { method: 'GET' })
-  },
-
-  async post(endpoint, data, options = {}) {
-    // 如果是 FormData，直接使用，否则转换为 JSON
-    const body = data instanceof FormData ? data : JSON.stringify(data)
-    
-    return this.request(endpoint, {
-      method: 'POST',
-      body,
+    const config = {
+      method: 'GET',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      credentials: 'include',
       ...options
-    })
-  },
+    }
+    
+    // 如果不是请求 blob，添加 Content-Type
+    if (!options.responseType || options.responseType !== 'blob') {
+      config.headers['Content-Type'] = 'application/json'
+    }
+    
+    const response = await fetch(url, config)
+    return response
+  }
 
-  async put(endpoint, data) {
-    return this.request(endpoint, {
-      method: 'PUT',
+  async post(endpoint, data) {
+    const token = localStorage.getItem('token')
+    const url = endpoint.startsWith('/api') ? endpoint : `${this.baseUrl}${endpoint}`
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
       body: JSON.stringify(data)
     })
-  },
+    return response
+  }
+
+  async put(endpoint, data) {
+    const token = localStorage.getItem('token')
+    const url = endpoint.startsWith('/api') ? endpoint : `${this.baseUrl}${endpoint}`
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify(data)
+    })
+    return response
+  }
 
   async delete(endpoint) {
-    return this.request(endpoint, { method: 'DELETE' })
+    const token = localStorage.getItem('token')
+    const url = endpoint.startsWith('/api') ? endpoint : `${this.baseUrl}${endpoint}`
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    })
+    return response
   }
-} 
+
+  async uploadDocument(kbId, file) {
+    const token = localStorage.getItem('token')
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const url = `${this.baseUrl}/knowledge-bases/${kbId}/documents`
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: formData,
+      credentials: 'include'
+    })
+    return response
+  }
+}
+
+export const api = new Api()

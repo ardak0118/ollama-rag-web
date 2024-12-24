@@ -3,8 +3,8 @@ from pdfminer.layout import LTTextContainer
 import logging
 from typing import List, Dict, Any
 from .text_splitter import MarkdownTextSplitter
-from langchain_ollama import OllamaEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain.vectorstores import Chroma
 from langchain.schema.document import Document
 import os
 import json
@@ -40,7 +40,7 @@ class DocumentProcessor:
         self.sub_splitter = RecursiveCharacterTextSplitter(
             chunk_size=200,
             chunk_overlap=50,
-            separators=["。", "！", "？", "；", "，", " ", ""]
+            separators=["。", "���", "？", "；", "，", " ", ""]
         )
         
         # 确保数据目录存在
@@ -113,7 +113,7 @@ class DocumentProcessor:
             # 3. 规范化标点符号
             text = text.replace('。。。', '。').replace('！！！', '！')
             
-            # 4. 移除特殊字符，但保留重要标记
+            # 4. 移除特������符，但保留重要记
             text = re.sub(r'[^\w\s\u4e00-\u9fff。，！？；：""''（）《》、第一二三四五六七八九十百千万章节条]', '', text)
             
             # 5. 处理实体一致性

@@ -51,6 +51,7 @@
 
 <script>
 import { authStore } from '../store/auth'
+import { api } from '../utils/api'
 
 export default {
   name: 'Register',
@@ -60,10 +61,22 @@ export default {
       email: '',
       password: '',
       error: null,
-      isLoading: false
+      isLoading: false,
+      isFirstUser: false
     }
   },
   methods: {
+    async checkIsFirstUser() {
+      try {
+        const response = await fetch('/api/auth/check-first-user')
+        const data = await response.json()
+        this.isFirstUser = data.is_first_user
+        console.log('Is first user:', this.isFirstUser)
+      } catch (error) {
+        console.error('Error checking first user:', error)
+      }
+    },
+    
     async handleRegister() {
       this.error = null
       this.isLoading = true
@@ -79,6 +92,10 @@ export default {
           return
         }
         
+        // 检查是否是预设的超级管理员账户或第一个注册的用户
+        const isAdmin = (this.username === 'admin' && this.password === '123456') || this.isFirstUser
+        console.log('Registering with admin status:', isAdmin)
+
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: {
@@ -86,29 +103,33 @@ export default {
           },
           body: JSON.stringify({
             username: this.username,
-            email: this.email,
-            password: this.password
+            email: this.email || `${this.username}@example.com`,
+            password: this.password,
+            is_admin: isAdmin
           })
-        });
+        })
 
-        const data = await response.json();
-        
-        if (response.ok) {
-          // 注册成功后直接登录
-          authStore.setToken(data.access_token)
-          await authStore.fetchCurrentUser()
-          this.$router.push('/')
-        } else {
-          this.error = data.detail || '注册失败'
-          console.error('Registration error:', data)
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || '注册失败')
         }
+
+        const data = await response.json()
+        console.log('Registration successful:', data)
+        
+        // 注册成功后直接登录
+        localStorage.setItem('token', data.access_token)
+        this.$router.push('/')
       } catch (err) {
         console.error('Registration error:', err)
-        this.error = '注册请求失败，请稍后重试'
+        this.error = err.message || '注册请求失败，请稍后重试'
       } finally {
         this.isLoading = false
       }
     }
+  },
+  async created() {
+    await this.checkIsFirstUser()
   }
 }
 </script>

@@ -1,21 +1,25 @@
-from fastapi import APIRouter, HTTPException, Depends, Form, Header
+from fastapi import APIRouter, HTTPException, Depends, Form, Header, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from .database import get_user_by_username, create_user, record_login
-from .models import User
-from .schemas import Token, UserCreate
-from .utils import create_access_token, verify_token
-from datetime import timedelta
-import os
+from sqlalchemy.orm import Session
+from datetime import timedelta, datetime
+import logging
 from typing import Optional
+from . import models, schemas
+from .database import get_db
+from .utils import create_access_token, verify_token
 
-# 将 router 重命名为 auth_router
+# 配置日志
+logger = logging.getLogger(__name__)
+
+# 创建路由器
 auth_router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-# 数据库路径
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "auth.db")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> models.User:
+    """获取当前用户"""
     credentials_exception = HTTPException(
         status_code=401,
         detail="Could not validate credentials",
@@ -26,108 +30,108 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     if token_data is None:
         raise credentials_exception
         
-    user = get_user_by_username(DB_PATH, token_data.username)
+    user = db.query(models.User).filter(models.User.username == token_data.username).first()
     if user is None:
         raise credentials_exception
         
     return user
 
-@auth_router.post("/register", response_model=Token)
-async def register(user_data: UserCreate):
+@auth_router.get("/check-first-user")
+async def check_first_user(db: Session = Depends(get_db)):
+    """检查是否是第一个用户"""
+    user_count = db.query(models.User).count()
+    return {"is_first_user": user_count == 0}
+
+@auth_router.post("/register")
+async def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """用户注册"""
     try:
-        print(f"Registering user: {user_data}")  # 添加调试日志
+        logger.info(f"Registration attempt for user: {user.username}")
         
-        # 数据验证
-        if len(user_data.username) < 3:
+        # 检查用户名是否已存在
+        db_user = db.query(models.User).filter(models.User.username == user.username).first()
+        if db_user:
+            logger.warning(f"Username {user.username} already exists")
             raise HTTPException(
-                status_code=400,
-                detail="Username must be at least 3 characters"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
             )
-        if len(user_data.password) < 6:
-            raise HTTPException(
-                status_code=400,
-                detail="Password must be at least 6 characters"
-            )
-            
-        # 验证用户名是否已存在
-        existing_user = get_user_by_username(DB_PATH, user_data.username)
-        if existing_user:
-            raise HTTPException(
-                status_code=400,
-                detail="Username already exists"
-            )
-            
-        try:
-            # 创建新用户
-            user = create_user(DB_PATH, user_data)
-            if not user:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to create user"
-                )
-            
-            # 创建访问令牌
-            access_token = create_access_token(
-                data={"sub": user.username},
-                expires_delta=timedelta(hours=24)
-            )
-            
-            return {
-                "access_token": access_token,
-                "token_type": "bearer",
-                "expires_in": 24 * 60 * 60
+        
+        # 检查是否是第一个用户
+        is_first_user = db.query(models.User).count() == 0
+        logger.info(f"Is first user: {is_first_user}")
+        
+        # 确定是否设置为管理员
+        is_admin = is_first_user or user.is_admin
+        logger.info(f"Setting admin status: {is_admin}")
+        
+        # 创建新用户
+        db_user = models.User(
+            username=user.username,
+            email=user.email,
+            is_admin=is_admin
+        )
+        db_user.set_password(user.password)
+        
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        logger.info(f"User {user.username} created successfully")
+        
+        # 生成访问令牌
+        access_token = create_access_token(data={"sub": user.username})
+        
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": db_user.id,
+                "username": db_user.username,
+                "email": db_user.email,
+                "is_admin": db_user.is_admin
             }
-            
-        except ValueError as ve:
-            raise HTTPException(
-                status_code=400,
-                detail=str(ve)
-            )
-            
+        }
     except HTTPException as he:
-        print(f"HTTP Exception in register: {he.detail}")  # 添加错误日志
         raise he
     except Exception as e:
-        print(f"Unexpected error in register: {str(e)}")  # 添加错误日志
+        logger.error(f"Registration error: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Registration failed: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
 
-@auth_router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@auth_router.post("/login", response_model=schemas.Token)
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    """用户登录"""
     try:
-        print(f"Login attempt for user: {form_data.username}")
-        print(f"Form data: {form_data}")
-        
-        user = get_user_by_username(DB_PATH, form_data.username)
-        
+        # 查找用户
+        user = db.query(models.User).filter(models.User.username == form_data.username).first()
         if not user:
-            print(f"User not found: {form_data.username}")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid username or password"
             )
-        
-        print(f"Found user: {user.username}")
-        print(f"Stored hash: {user.hashed_password}")
-        print(f"Input password length: {len(form_data.password)}")
         
         # 验证密码
         if not user.check_password(form_data.password):
-            print(f"Password verification failed for user: {user.username}")
             raise HTTPException(
                 status_code=401,
                 detail="Invalid username or password"
             )
-            
+        
+        # 更新最后登录时间
+        user.last_login = datetime.utcnow()
+        db.commit()
+        
         # 创建访问令牌
         access_token = create_access_token(
             data={"sub": user.username},
             expires_delta=timedelta(hours=24)
         )
         
-        print(f"Login successful for user: {user.username}")
         return {
             "access_token": access_token,
             "token_type": "bearer",
@@ -137,44 +141,21 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"Unexpected error in login: {str(e)}")
+        logger.error(f"Login error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Login failed: {str(e)}"
         )
 
-@auth_router.get("/me", response_model=dict)
-async def read_users_me(current_user: User = Depends(get_current_user)):
+@auth_router.get("/me")
+async def get_current_user_info(current_user: models.User = Depends(get_current_user)):
     """获取当前用户信息"""
-    try:
-        if not current_user:
-            raise HTTPException(
-                status_code=401,
-                detail="Not authenticated",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-        # 返回用户信息，排除敏感字段
-        return {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "role": current_user.role,
-            "avatar": current_user.avatar,
-            "is_active": current_user.is_active,
-            "is_verified": current_user.is_verified,
-            "created_at": current_user.created_at,
-            "last_login": current_user.last_login
-        }
-        
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        logger.error(f"Error in read_users_me: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error: {str(e)}"
-        )
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_admin": current_user.is_admin
+    }
 
 # 确保这些是可导出的
 __all__ = ['auth_router', 'get_current_user']

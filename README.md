@@ -15,6 +15,7 @@
 ## 技术栈
 
 ### 后端
+
 - FastAPI
 - Langchain
 - Ollama
@@ -23,6 +24,7 @@
 - SQLite
 
 ### 前端
+
 - Vue.js
 - Vite
 - Tailwind CSS
@@ -38,15 +40,19 @@
 ## 快速开始
 
 ### 1. 安装 Ollama
+
 ## Linux/MacOS
+
 curl -fsSL https://ollama.com/install.sh | sh
 Windows
 从 https://ollama.com/download 下载安装包
 
 ### 2. 下载模型
+
 ollama run qwen2.5:latest
 
 ### 3. 后端设置
+
 创建虚拟环境
 
 python -m venv venv
@@ -57,18 +63,19 @@ source venv/bin/activate # Linux/MacOS
 
 安装依赖
 
-cd backend
+cd backendI
 pip install -r requirements.txt
 
 初始化数据库
 
 python init_db.py
 
-启动后端服务
+启 ��� 后端服务
 
 python run.py
 
 ### 4. 前端设置
+
 安装依赖
 
 cd frontend
@@ -117,19 +124,18 @@ ollama-rag-web/
 
 └── README.md
 
-
 ## 配置说明
 
 ### 后端配置
 
 1. 数据库配置 (backend/app/config.py)
-DATABASE_URL = "sqlite:///./knowledge_base.db"
+   DATABASE_URL = "sqlite:///./knowledge_base.db"
 2. Ollama 配置
 
 ### 前端配置
 
 1. API 配置 (frontend/src/utils/api.js)
-const API_BASE_URL = 'http://localhost:8000/api'
+   const API_BASE_URL = 'http://localhost:8000/api'
 
 ## 使用说明
 
@@ -147,11 +153,13 @@ const API_BASE_URL = 'http://localhost:8000/api'
 
 ## 常见问题
 
-1. 模型下载失败
+1. 模型下 ��� 失败
+
    - 检查网络连接
    - 确认 Ollama 服务正常运行
 
 2. 文档处理失败
+
    - 检查 PDF 格式
    - 确认文件编码正确
 

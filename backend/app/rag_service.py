@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Set, Optional, Tuple
 import logging
-from langchain_ollama import OllamaEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.vectorstores import Chroma
 import os
 import httpx
@@ -66,7 +66,7 @@ class RAGService:
             # 加载自定义词典
             self.load_custom_dict()
             
-            # 添加人名缓存
+            # 添加���名缓存
             self.person_names_cache = set()
             
             # 人名相关词
@@ -118,7 +118,7 @@ class RAGService:
 5. 如果文档内容相互矛盾，请指出这一点。
 6. 优先使用相关度更高的文档内容。
 7. 确保回答的完整性和准确性。
-8. 如果上传的知识库文档是任职名单类似的，知识库会有（20xx年x月xx日新疆维吾尔自治区第xx届人民代表大会常务委员会第xx次会议通过）这样的时间信息，请特别注意
+8. 如果上传的知识库文档是任职名单类似的，知���库会有（20xx年x月xx日新疆维吾尔自治区第xx届人民代表大会常务委员会第xx次会议通过）这样的时间信息，请特别注意
 9. 如果知识库有多个任职名单，请特别注意
 10. 如果知识库有（20xx年x月xx日新疆维吾尔自治区第xx届人民代表大会常务委员会第xx次会议通过），该时间就是所有人员的任职或免职时间
 11. 一个人可能会在多个任职名单中出现，请特别注意，并给出所有任职名单中该人员的任职或免职时间
@@ -728,7 +728,7 @@ class RAGService:
 6. 如果知识库有多个任职名单，请特别注意
 7. 如果知识库有（20xx年x月xx日新疆维吾尔自治区第xx届人民代表大会常务委员会第xx次会议通过），该时间就是所有人员的任职或免职时间
 8. 一个人可能会在多个任职名单中出现，请特别注意，并给出所有任职名单中该人员的任职或免职时间
-9. 如果知识库文档有（本会议任免的名单从202X年X月XX日开始成效），该时间就是所有人员的任职或免职时间
+9. 如果知识库文��有（本会议任免的名单从202X年X月XX日开始成效），该时间就是所有人员的任职或免职时间
 参考信息：
 {context}
 

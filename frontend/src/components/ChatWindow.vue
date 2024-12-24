@@ -6,6 +6,19 @@
         <button class="new-chat-btn" @click="startNewConversation">
           <span>+ 新对话</span>
         </button>
+        <div class="admin-actions" v-if="authStore.isAdmin">
+          <button class="admin-btn" @click="goToUserManagement">
+            <i class="fas fa-users-cog"></i>
+            <span>用户管理</span>
+          </button>
+          <button class="admin-btn" @click="goToAdminTest">
+            <i class="fas fa-bug"></i>
+            <span>权限测试</span>
+          </button>
+        </div>
+        <div class="debug-info">
+          <span>当前身份: {{ authStore.isAdmin ? '管理员' : '普通用户' }}</span>
+        </div>
       </div>
       
       <div class="sidebar-content">
@@ -126,6 +139,8 @@
 <script>
 import { api } from '../utils/api'
 import { ref, reactive } from 'vue'
+import { authStore } from '../store/auth'
+import { useRouter } from 'vue-router'
 
 export default {
   name: 'ChatWindow',
@@ -275,7 +290,7 @@ export default {
         // 添加更具体的错误消息
         let errorMessage = '发送消息失败：'
         if (error.message.includes('未获取到有效回答')) {
-          errorMessage = '抱歉，知识库中未找到相关信息。请尝试换个方式提问，或确认知识库中是否包含相关内容。'
+          errorMessage = '抱歉，知识库中��找到相关信息。请尝试换个方式提问，或确认知识库中是否包含相关内容。'
         } else if (error.message.includes('请求失败')) {
           errorMessage = '抱歉，服务器响应错误，请稍后重试。'
         } else {
@@ -566,6 +581,23 @@ export default {
           this.selectedKnowledgeBase = oldVal
         }
       }
+    }
+  },
+  setup() {
+    const router = useRouter()
+    
+    const goToUserManagement = () => {
+      router.push('/admin/users')
+    }
+
+    const goToAdminTest = () => {
+      router.push('/admin/test')
+    }
+
+    return {
+      authStore,
+      goToUserManagement,
+      goToAdminTest
     }
   }
 }
@@ -1184,5 +1216,60 @@ textarea::placeholder {
 .message-confidence.低 {
   background-color: #fee2e2;
   color: #991b1b;
+}
+
+.admin-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.admin-btn {
+  width: 100%;
+  padding: 8px 16px;
+  background-color: #4b5563;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.admin-btn:hover {
+  background-color: #374151;
+}
+
+.admin-btn i {
+  font-size: 16px;
+}
+
+/* 暗色主题支持 */
+@media (prefers-color-scheme: dark) {
+  .admin-actions {
+    border-top-color: #374151;
+  }
+
+  .admin-btn {
+    background-color: #374151;
+  }
+
+  .admin-btn:hover {
+    background-color: #4b5563;
+  }
+}
+
+/* 添加调试信息样式 */
+.debug-info {
+  font-size: 12px;
+  padding: 4px 8px;
+  background-color: #374151;
+  color: #fff;
+  border-radius: 4px;
+  margin-bottom: 8px;
 }
 </style> 

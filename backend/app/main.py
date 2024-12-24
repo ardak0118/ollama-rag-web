@@ -13,10 +13,12 @@ import json
 from .rag_service import rag_service
 from langchain_community.vectorstores import Chroma
 from .auth.routes import auth_router, get_current_user
-from .auth.database import init_auth_db
+from .auth.database import init_db
 from .auth.models import User
 from .auth.utils import verify_token
 from .pdf_processor import pdf_processor
+from .auth.admin_routes import admin_router
+from .knowledge_base.routes import kb_router
 
 # 初始化文档处理器
 doc_processor = DocumentProcessor()
@@ -31,26 +33,33 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# 开发环境允许的源
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://192.168.1.21:5173",  # 开发服务器
+    "http://192.168.1.21",       # 生产环境
+    "http://localhost"
+]
+
+# 配置 CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,  # 替换为具体的域名列表
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"]
+)
+
 # 数据库配置
 DATABASE_URL = os.path.join(os.path.dirname(__file__), "chat_history.db")
 
 # 确保数据库目录存在
 os.makedirs(os.path.dirname(DATABASE_URL), exist_ok=True)
 
-# 配置 CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600
-)
-
 # 数据库初始化
-def init_db():
-    """初始化数据库"""
+def init_chat_db():
+    """初始化聊天数据库"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
@@ -93,16 +102,30 @@ def init_db():
         ''')
         
         conn.commit()
-        logger.info("Database initialized successfully")
+        logger.info("Chat database initialized successfully")
     except Exception as e:
-        logger.error(f"Error initializing database: {str(e)}")
+        logger.error(f"Error initializing chat database: {str(e)}")
         raise
     finally:
         if conn:
             conn.close()
 
-# 确保在应用启动时初始化数据库
-init_db()
+# 在应用启动时执行初始化
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时的事件处理"""
+    try:
+        # 初始化认证数据库
+        init_db()
+        # 初始化聊天数据库
+        init_chat_db()
+        logger.info("All databases initialized successfully")
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise
+
+# 添加认证路由
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 # Ollama API 配置
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
@@ -586,7 +609,7 @@ async def upload_document(kb_id: int, file: UploadFile = File(...)):
             result = await pdf_processor.save_pdf(file)
             logger.info(f"PDF saved: {result['filename']}")
             
-            # 保存文档记录到数据库
+            # 存文档记录到数据库
             c.execute('''
                 INSERT INTO documents (knowledge_base_id, name, content, file_path)
                 VALUES (?, ?, ?, ?)
@@ -694,7 +717,7 @@ async def get_document(
 
 @app.get("/api/knowledge-base/{kb_id}/documents")
 async def get_documents(kb_id: int):
-    """获取知识库中的所有文档"""
+    """获取知识库的所有文档"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
@@ -750,7 +773,7 @@ async def upload_file_for_chat(file: UploadFile = File(...)):
         temp_dir = os.path.join(os.path.dirname(__file__), "temp")
         os.makedirs(temp_dir, exist_ok=True)
         
-        # 保存上传的文件到临时目录
+        # 存上传的文件到临时目录
         file_path = os.path.join(temp_dir, file.filename)
         try:
             content = await file.read()
@@ -922,13 +945,13 @@ async def get_kb_documents(
     kb_id: int,
     current_user: User = Depends(get_current_user)  # 添加用户认证
 ):
-    """取知识库中的所有文档"""
+    """知识库中的所有文档"""
     logger.info(f"User {current_user.username} accessing documents for kb_id: {kb_id}")
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
         
-        # 获取���档列表
+        # 获取文档列表
         c.execute('''
             SELECT id, name, content, created_at
             FROM documents
@@ -1169,7 +1192,7 @@ async def update_document(
             logger.info("Vector store updated successfully")
         except Exception as e:
             logger.error(f"Error updating vector store: {str(e)}")
-            # 继续处理，即使向量存储更新失败
+            # 继续处理，即使向��存储更新失败
         
         return {
             "message": "Document updated successfully",
@@ -1312,7 +1335,7 @@ async def debug_vector_store(
 
 @app.post("/api/rag/test")
 async def test_rag_system(kb_id: int):
-    """测试 RAG 系统的端点"""
+    """测试 RAG 系统的点"""
     try:
         # 1. 检查知识库是否存在
         conn = sqlite3.connect(DATABASE_URL)
@@ -1392,57 +1415,12 @@ async def test_rag_system(kb_id: int):
         if conn:
             conn.close()
 
-# 初始化认证数据库
-auth_db_path = os.path.join(os.path.dirname(__file__), "auth.db")
-init_auth_db(auth_db_path)
-
-# 添加认证路由
-app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
-
-def migrate_db():
-    """数据库迁移"""
-    try:
-        conn = sqlite3.connect(DATABASE_URL)
-        c = conn.cursor()
-        
-        # 检查是否需要添加 file_path 列
-        c.execute("PRAGMA table_info(documents)")
-        columns = [column[1] for column in c.fetchall()]
-        
-        if 'file_path' not in columns:
-            logger.info("Adding file_path column to documents table")
-            c.execute('ALTER TABLE documents ADD COLUMN file_path TEXT')
-            conn.commit()
-            logger.info("Database migration completed successfully")
-            
-    except Exception as e:
-        logger.error(f"Error migrating database: {str(e)}")
-        raise
-    finally:
-        if conn:
-            conn.close()
-
-# 在应用启动时执行迁移
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时的事件处理"""
-    try:
-        # 初始化数据库
-        init_db()
-        # 执行数据库迁移
-        migrate_db()
-        # 初始化认证数据库
-        init_auth_db(os.path.join(os.path.dirname(__file__), "auth.db"))
-    except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
-        raise
-
 # 修改 Ollama 代理接口
 @app.get("/api/proxy/models")
 async def proxy_models():
     """代理 Ollama 模型列表请求"""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:  # 增加超时时���
+        async with httpx.AsyncClient(timeout=10.0) as client:  # 增加超时时
             response = await client.get(
                 "http://localhost:11434/api/tags",
                 headers={
@@ -1539,6 +1517,20 @@ async def check_ollama_health():
             "status": "unhealthy",
             "message": f"Error connecting to Ollama: {str(e)}"
         }
+
+# 添加管理员路由
+app.include_router(
+    admin_router,
+    prefix="/api/admin",
+    tags=["admin"]
+)
+
+# 注册知识库路由
+app.include_router(
+    kb_router,
+    prefix="/api",
+    tags=["knowledge-base"]
+)
 
 if __name__ == "__main__":
     import uvicorn

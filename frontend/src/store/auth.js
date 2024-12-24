@@ -1,57 +1,46 @@
-import { reactive } from '@vue/runtime-core'
+import { reactive } from 'vue'
 import { api } from '../utils/api'
 
-const user = reactive({
-  data: null
-})
-
-const token = reactive({
-  value: localStorage.getItem('token')
-})
-
 export const authStore = reactive({
-  get user() {
-    return user.data
-  },
-  
-  get token() {
-    return token.value
-  },
-  
-  setUser(userData) {
-    user.data = userData
-  },
-  
-  setToken(tokenValue) {
-    token.value = tokenValue
-    localStorage.setItem('token', tokenValue)
-  },
-  
-  clearAuth() {
-    user.data = null
-    token.value = null
-    localStorage.removeItem('token')
-  },
+  user: null,
+  token: null,
+  isAdmin: false,
   
   async fetchCurrentUser() {
     try {
-      if (!token.value) {
-        this.clearAuth()
-        return
-      }
-
       const response = await api.get('/api/auth/me')
       if (response.ok) {
         const userData = await response.json()
-        this.setUser(userData)
-      } else {
-        this.clearAuth()
-        throw new Error(response.statusText)
+        this.user = userData
+        this.isAdmin = userData.is_admin || false
+        return userData
       }
-    } catch (err) {
-      console.error('Failed to fetch user:', err)
-      this.clearAuth()
-      throw err
+      return null
+    } catch (error) {
+      console.error('Failed to fetch user:', error)
+      return null
+    }
+  },
+
+  setToken(token) {
+    this.token = token
+    localStorage.setItem('token', token)
+  },
+
+  clearAuth() {
+    this.user = null
+    this.token = null
+    this.isAdmin = false
+    localStorage.removeItem('token')
+  },
+
+  init() {
+    const token = localStorage.getItem('token')
+    if (token) {
+      this.token = token
+      this.fetchCurrentUser()
     }
   }
-}) 
+})
+
+authStore.init()

@@ -1,56 +1,34 @@
+from passlib.context import CryptContext
+from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional
-from jose import JWTError, jwt
-import os
-from passlib.context import CryptContext
-from .schemas import TokenData  # 从 schemas 导入
-import logging
+from .schemas import TokenData
 
-logger = logging.getLogger(__name__)
-
-# 配置密码哈希
+# 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# 配置 JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
+# JWT 配置
+SECRET_KEY = "your-secret-key-here"  # 在生产环境中应该使用环境变量
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 小时
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
-    try:
-        logger.info(f"Verifying password. Plain length: {len(plain_password)}")
-        logger.info(f"Hashed password: {hashed_password}")
-        result = pwd_context.verify(plain_password, hashed_password)
-        logger.info(f"Password verification result: {result}")
-        return result
-    except Exception as e:
-        logger.error(f"Password verification error: {str(e)}")
-        return False
+    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """生成密码哈希"""
-    try:
-        hashed = pwd_context.hash(password)
-        logger.info(f"Generated hash for password. Hash: {hashed}")
-        return hashed
-    except Exception as e:
-        logger.error(f"Error generating password hash: {str(e)}")
-        raise
+    return pwd_context.hash(password)
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """创建访问令牌"""
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def verify_token(token: str) -> Optional[TokenData]:
-    """验证令牌"""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -58,4 +36,4 @@ def verify_token(token: str) -> Optional[TokenData]:
             return None
         return TokenData(username=username)
     except JWTError:
-        return None 
+        return None
