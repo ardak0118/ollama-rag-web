@@ -1,5 +1,5 @@
 <template>
-  <div class="admin-test">
+  <div class="admin-test mobile-adaptive">
     <h2>管理员权限测试</h2>
     
     <!-- 测试结果 -->
@@ -17,16 +17,38 @@
         <div class="stats-grid">
           <div class="stat-item">
             <div class="stat-label">总用户数</div>
-            <div class="stat-value">{{ stats.total_users }}</div>
+            <div class="stat-value">{{ stats.user_stats.total }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-label">管理员数</div>
-            <div class="stat-value">{{ stats.admin_users }}</div>
+            <div class="stat-value">{{ stats.user_stats.admin }}</div>
           </div>
           <div class="stat-item">
             <div class="stat-label">活跃用户数</div>
-            <div class="stat-value">{{ stats.active_users }}</div>
+            <div class="stat-value">{{ stats.user_stats.active }}</div>
           </div>
+        </div>
+
+        <!-- 最近注册用户 -->
+        <div v-if="stats.recent_users.length" class="recent-section">
+          <h3>最近注册用户</h3>
+          <ul class="recent-list">
+            <li v-for="user in stats.recent_users" :key="user.id">
+              {{ user.username }} ({{ user.email }})
+              <span class="time">{{ formatDate(user.created_at) }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- 最近登录用户 -->
+        <div v-if="stats.recent_logins.length" class="recent-section">
+          <h3>最近登录用户</h3>
+          <ul class="recent-list">
+            <li v-for="user in stats.recent_logins" :key="user.id">
+              {{ user.username }}
+              <span class="time">{{ formatDate(user.last_login) }}</span>
+            </li>
+          </ul>
         </div>
       </div>
       
@@ -60,11 +82,24 @@ export default {
     const testResults = ref([])
     const stats = ref(null)
     
+    const formatDate = (dateString) => {
+      if (!dateString) return '未知'
+      const date = new Date(dateString)
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    
     const testAdminAPI = async () => {
       try {
-        const response = await api.get('/admin/test')
+        const response = await api.get('/api/admin/test')
         if (!response.ok) {
-          throw new Error(await response.text())
+          const errorData = await response.json()
+          throw new Error(errorData.detail || 'Admin API test failed')
         }
         const data = await response.json()
         testResults.value.push({
@@ -72,6 +107,7 @@ export default {
           message: `管理员 API 测试成功: ${data.message}`
         })
       } catch (error) {
+        console.error('Failed to test admin API:', error)
         testResults.value.push({
           success: false,
           message: `管理员 API 测试失败: ${error.message}`
@@ -81,13 +117,15 @@ export default {
     
     const refreshStats = async () => {
       try {
-        const response = await api.get('/admin/stats')
+        const response = await api.get('/api/admin/stats')
         if (!response.ok) {
-          throw new Error(await response.text())
+          const errorData = await response.json()
+          throw new Error(JSON.stringify(errorData))
         }
-        stats.value = (await response.json()).user_stats
+        stats.value = await response.json()
       } catch (error) {
         console.error('Failed to fetch stats:', error)
+        throw error
       }
     }
     
@@ -100,7 +138,8 @@ export default {
       testResults,
       stats,
       testAdminAPI,
-      refreshStats
+      refreshStats,
+      formatDate
     }
   }
 }
@@ -212,5 +251,55 @@ export default {
 .result-item.error {
   background-color: #fee2e2;
   color: #991b1b;
+}
+
+.recent-section {
+  margin-top: 24px;
+}
+
+.recent-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+
+.recent-list li {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.time {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* 添加移动端适配 */
+@media (max-width: 768px) {
+  .admin-test {
+    padding: 16px;
+  }
+
+  .test-section {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .test-button {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .result-box {
+    padding: 12px;
+    font-size: 14px;
+    margin-top: 12px;
+  }
 }
 </style> 

@@ -17,8 +17,13 @@ from .auth.database import init_db
 from .auth.models import User
 from .auth.utils import verify_token
 from .pdf_processor import pdf_processor
-from .auth.admin_routes import admin_router
+from .auth.admin_routes import admin_router as auth_admin_router
 from .knowledge_base.routes import kb_router
+from .admin.routes import admin_router
+from .feedback.routes import feedback_router
+from .auth.models import User
+from .knowledge_base.models import KnowledgeBase
+from .feedback.models import Feedback
 
 # 初始化文档处理器
 doc_processor = DocumentProcessor()
@@ -33,22 +38,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# 开发环境允许的源
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://192.168.1.21:5173",  # 开发服务器
-    "http://192.168.1.21",       # 生产环境
-    "http://localhost"
-]
-
 # 配置 CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # 替换为具体的域名列表
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        # 添加你的局域网 IP，比如：
+        "http://192.168.1.21:5173"  # 根据实际 IP 修改
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"]
 )
 
 # 数据库配置
@@ -56,6 +57,9 @@ DATABASE_URL = os.path.join(os.path.dirname(__file__), "chat_history.db")
 
 # 确保数据库目录存在
 os.makedirs(os.path.dirname(DATABASE_URL), exist_ok=True)
+
+# 初始化数据库
+init_db()
 
 # 数据库初始化
 def init_chat_db():
@@ -154,7 +158,7 @@ class ChatRequest(BaseModel):
     model: str = "qwen2.5:latest"
 
 def save_message(conversation_id: str, message: str, role: str, model: str, kb_id: Optional[int] = None, sources: List[Dict] = None):
-    """统一的消息保存函数"""
+    """统一的息保存函数"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
@@ -242,7 +246,7 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
 
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str, current_user: User = Depends(get_current_user)):
-    """获取特定对话的所有消息"""
+    """获取特定对话的消息"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
@@ -1192,7 +1196,7 @@ async def update_document(
             logger.info("Vector store updated successfully")
         except Exception as e:
             logger.error(f"Error updating vector store: {str(e)}")
-            # 继续处理，即使向��存储更新失败
+            # 继续处理，即使向量存储更新失败
         
         return {
             "message": "Document updated successfully",
@@ -1222,7 +1226,7 @@ async def reprocess_document(
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
         
-        # 获取文档信息
+        # 取文档信息
         c.execute('''
             SELECT content, name, file_path 
             FROM documents 
@@ -1335,7 +1339,7 @@ async def debug_vector_store(
 
 @app.post("/api/rag/test")
 async def test_rag_system(kb_id: int):
-    """测试 RAG 系统的点"""
+    """测试 RAG 系统点"""
     try:
         # 1. 检查知识库是否存在
         conn = sqlite3.connect(DATABASE_URL)
@@ -1361,7 +1365,7 @@ async def test_rag_system(kb_id: int):
         # 4. 执行测试查询
         test_queries = [
             "第十四条的内容是什么？",
-            "铁路线路两侧杆塔要求是什么？",
+            "铁路线两侧杆塔要求是什么？",
             "关于树木等植物的规定有哪些？"
         ]
         
@@ -1518,23 +1522,15 @@ async def check_ollama_health():
             "message": f"Error connecting to Ollama: {str(e)}"
         }
 
-# 添加管理员路由
-app.include_router(
-    admin_router,
-    prefix="/api/admin",
-    tags=["admin"]
-)
-
-# 注册知识库路由
-app.include_router(
-    kb_router,
-    prefix="/api",
-    tags=["knowledge-base"]
-)
+# 挂载所有路由
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(admin_router, prefix="/api/admin", tags=["admin"])  # 注意这里的前缀
+app.include_router(kb_router, prefix="/api", tags=["knowledge-base"])
+app.include_router(feedback_router, prefix="/api/feedback", tags=["feedback"])
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
 
 
 

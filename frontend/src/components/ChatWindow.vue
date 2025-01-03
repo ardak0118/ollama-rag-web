@@ -1,6 +1,56 @@
 <template>
   <div class="app-layout">
-    <!-- 左侧对话历史 -->
+    <!-- 移动端导航按钮 -->
+    <button class="nav-trigger" @click="toggleNav" aria-label="显示导航菜单">
+      <i class="fas fa-bars"></i>
+    </button>
+
+    <!-- 左侧导航菜单 -->
+    <div v-if="showNav" class="nav-overlay" :class="{ active: showNav }" @click="toggleNav"></div>
+    <div class="nav-menu" :class="{ active: showNav }">
+      <button class="close-nav" @click="toggleNav" aria-label="关闭导航菜单">×</button>
+      <div class="nav-header">
+        <button class="new-chat-btn" @click="startNewConversationAndClose">
+          <span>+ 新对话</span>
+        </button>
+        <div class="admin-actions" v-if="authStore.isAdmin">
+          <button class="admin-btn" @click="goToUserManagementAndClose">
+            <i class="fas fa-users-cog"></i>
+            <span>用户管理</span>
+          </button>
+          <button class="admin-btn" @click="goToAdminTestAndClose">
+            <i class="fas fa-bug"></i>
+            <span>权限测试</span>
+          </button>
+        </div>
+        <div class="debug-info">
+          <span>当前身份: {{ authStore.isAdmin ? '管理员' : '普通用户' }}</span>
+        </div>
+      </div>
+      
+      <div class="nav-content">
+        <div class="chat-history">
+          <div v-for="conv in allConversations" 
+               :key="conv.id"
+               :class="['chat-item', { active: currentConversationId === conv.id }]"
+               @click="loadConversationAndCloseNav(conv)">
+            <div class="chat-info">
+              <div class="chat-title" :title="conv.title">
+                {{ conv.title || '新对话' }}
+              </div>
+              <div class="chat-type-badge" :class="conv.type">
+                {{ conv.type === 'rag' ? '知识库对话' : '普通对话' }}
+              </div>
+            </div>
+            <button class="delete-btn" @click.stop="deleteConversation(conv)">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 桌面端侧边栏 -->
     <div class="sidebar">
       <div class="sidebar-header">
         <button class="new-chat-btn" @click="startNewConversation">
@@ -41,8 +91,9 @@
       </div>
     </div>
 
+    <!-- 主内容区域 -->
     <div class="main-content">
-      <!-- 顶部 -->
+      <!-- 顶部设置栏 -->
       <div class="top-bar">
         <div class="chat-settings">
           <div class="settings-row">
@@ -87,9 +138,6 @@
             </div>
           </div>
           <div class="message-content" v-html="formatMessage(message.content)"></div>
-          <div v-if="message.confidence" class="message-confidence" :class="message.confidence">
-            置信度：{{ message.confidence }}
-          </div>
           <div v-if="message.sources && message.sources.length > 0" class="message-sources">
             <div class="sources-title">参考来源：</div>
             <div v-for="(source, idx) in message.sources" 
@@ -109,7 +157,7 @@
         </div>
       </div>
 
-      <!-- 部输入区域 -->
+      <!-- 输入区域 -->
       <div class="input-area">
         <div class="input-container">
           <textarea 
@@ -157,7 +205,8 @@ export default {
       allConversations: [],
       sourceExpanded: reactive({}),
       error: null,
-      lastMessageTime: null
+      lastMessageTime: null,
+      showNav: false  // 添加导航菜单状态
     }
   },
   computed: {
@@ -290,7 +339,7 @@ export default {
         // 添加更具体的错误消息
         let errorMessage = '发送消息失败：'
         if (error.message.includes('未获取到有效回答')) {
-          errorMessage = '抱歉，知识库中��找到相关信息。请尝试换个方式提问，或确认知识库中是否包含相关内容。'
+          errorMessage = '抱歉，知识库中找不到相关信息。请尝试换个方式提问，或确认知识库中是否包含相关内容。'
         } else if (error.message.includes('请求失败')) {
           errorMessage = '抱歉，服务器响应错误，请稍后重试。'
         } else {
@@ -508,6 +557,35 @@ export default {
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    },
+
+    // 切换导航菜单
+    toggleNav() {
+      this.showNav = !this.showNav;
+    },
+
+    // 加载对话并关闭导航菜单
+    loadConversationAndCloseNav(conv) {
+      this.loadConversation(conv);
+      this.toggleNav();
+    },
+
+    // 开始新对话并关闭导航菜单
+    startNewConversationAndClose() {
+      this.startNewConversation();
+      this.toggleNav();
+    },
+
+    // 跳转到用户管理并关闭导航菜单
+    goToUserManagementAndClose() {
+      this.goToUserManagement();
+      this.toggleNav();
+    },
+
+    // 跳转到权限测试并关闭导航菜单
+    goToAdminTestAndClose() {
+      this.goToAdminTest();
+      this.toggleNav();
     }
   },
   async created() {
@@ -612,9 +690,10 @@ export default {
 
 /* 侧边栏样式 */
 .sidebar {
-  width: 260px;
-  background-color: #f9fafb;
-  border-right: 1px solid #e5e7eb;
+  width: 300px;
+  height: 100vh;
+  background: #fdfeff;
+  border-right: 1px solid #b1b1b1;
   display: flex;
   flex-direction: column;
 }
@@ -626,10 +705,10 @@ export default {
 
 .new-chat-btn {
   width: 100%;
-  padding: 8px 16px;
+  padding: 12px 20px;
   background-color: #ffffff;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 30px;
   color: #374151;
   font-size: 14px;
   cursor: pointer;
@@ -638,10 +717,13 @@ export default {
   justify-content: center;
   gap: 8px;
   transition: all 0.2s;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .new-chat-btn:hover {
   background-color: #f3f4f6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .sidebar-content {
@@ -722,65 +804,73 @@ export default {
   padding: 12px 24px;
   border-bottom: 1px solid #e5e7eb;
   background-color: #ffffff;
+  margin: 20px;
+  border-radius: 30px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .chat-settings {
   max-width: 1200px;
   margin: 0 auto;
+  padding: 8px 16px;
 }
 
 .settings-row {
   display: flex;
   align-items: center;
-  gap: 32px;  /* 增加选择器之间的间距 */
+  gap: 32px;
+  justify-content: center;
 }
 
 .model-selector,
 .kb-selector {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1;  /* 让两个选择器平均分配空间 */
+  gap: 12px;
+  background-color: #f9fafb;
+  padding: 8px 16px;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+}
+
+.model-selector:hover,
+.kb-selector:hover {
+  background-color: #f3f4f6;
 }
 
 .model-selector label,
 .kb-selector label {
   font-size: 14px;
   color: #374151;
-  white-space: nowrap;  /* 防止标签换行 */
-  min-width: 80px;  /* 确保标签有固定的最小宽度 */
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .model-selector select,
 .kb-selector select {
-  flex: 1;  /* 让选择框占据剩余空间 */
-  padding: 8px 12px;
+  flex: 1;
+  padding: 6px 12px;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 12px;
   font-size: 14px;
   color: #374151;
   background-color: #ffffff;
   cursor: pointer;
   outline: none;
   transition: all 0.2s;
-}
-
-.model-selector select:hover,
-.kb-selector select:hover {
-  border-color: #d1d5db;
-}
-
-.model-selector select:focus,
-.kb-selector select:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  min-width: 150px;
 }
 
 /* 暗色主题支持 */
 @media (prefers-color-scheme: dark) {
-  .top-bar {
-    background-color: #1f2937;
-    border-bottom-color: #374151;
+  .model-selector,
+  .kb-selector {
+    background-color: #2d3748;
+  }
+
+  .model-selector:hover,
+  .kb-selector:hover {
+    background-color: #374151;
   }
 
   .model-selector label,
@@ -790,20 +880,9 @@ export default {
 
   .model-selector select,
   .kb-selector select {
-    background-color: #374151;
+    background-color: #1f2937;
     border-color: #4b5563;
     color: #e5e7eb;
-  }
-
-  .model-selector select:hover,
-  .kb-selector select:hover {
-    border-color: #6b7280;
-  }
-
-  .model-selector select:focus,
-  .kb-selector select:focus {
-    border-color: #60a5fa;
-    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1);
   }
 }
 
@@ -895,7 +974,7 @@ export default {
 .input-area {
   position: fixed;
   bottom: 0;
-  left: 260px;  /* 侧边栏宽度 */
+  left: 330px;  /* 侧边栏宽度 */
   right: 0;
   padding: 20px;
   background-color: #ffffff;
@@ -1156,7 +1235,7 @@ textarea::placeholder {
   }
 }
 
-.chat-messages::after {
+/* .chat-messages::after {
   content: '';
   position: fixed;
   bottom: 90px;
@@ -1166,7 +1245,7 @@ textarea::placeholder {
   background: linear-gradient(to bottom, transparent, #ffffff);
   pointer-events: none;
   z-index: 99;
-}
+} */
 
 @media (prefers-color-scheme: dark) {
   .chat-messages::after {
@@ -1222,15 +1301,18 @@ textarea::placeholder {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .admin-btn {
   width: 100%;
-  padding: 8px 16px;
-  background-color: #4b5563;
-  border: none;
-  border-radius: 6px;
-  color: white;
+  padding: 12px 20px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 30px;
+  color: #374151;
   font-size: 14px;
   cursor: pointer;
   display: flex;
@@ -1238,28 +1320,42 @@ textarea::placeholder {
   justify-content: center;
   gap: 8px;
   transition: all 0.2s;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .admin-btn:hover {
-  background-color: #374151;
+  background-color: #f3f4f6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .admin-btn i {
   font-size: 16px;
+  color: #4b5563;
 }
 
 /* 暗色主题支持 */
 @media (prefers-color-scheme: dark) {
+  .new-chat-btn,
+  .admin-btn {
+    background-color: #1f2937;
+    border-color: #374151;
+    color: #e5e7eb;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  }
+
+  .new-chat-btn:hover,
+  .admin-btn:hover {
+    background-color: #2d3748;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .admin-btn i {
+    color: #9ca3af;
+  }
+
   .admin-actions {
     border-top-color: #374151;
-  }
-
-  .admin-btn {
-    background-color: #374151;
-  }
-
-  .admin-btn:hover {
-    background-color: #4b5563;
   }
 }
 
@@ -1272,4 +1368,295 @@ textarea::placeholder {
   border-radius: 4px;
   margin-bottom: 8px;
 }
+
+/* 修改移动端样式 */
+@media screen and (max-width: 340px) {
+  .app-layout {
+    flex-direction: column;
+    height: 80vh;
+    max-height: 680px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* 历史对话侧边栏 */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -100%;  /* 默认隐藏在左侧 */
+    width: 85%;
+    height: 100vh;
+    max-height: 700px;
+    background: #ffffff;
+    border-right: 1px solid #000000;
+    z-index: 1000;
+    transition: left 0.3s ease;
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  .sidebar.active {
+    left: 0;  /* 显示时滑入 */
+  }
+
+  /* 遮罩层 */
+  .sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .sidebar-overlay.active {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* 历史对话按钮 */
+  .history-btn {
+    position: fixed;
+    left: 20px;
+    bottom: 100px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 1px solid #000000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  }
+
+  .history-btn i {
+    font-size: 18px;
+    color: #000000;
+  }
+
+  /* 关闭按钮 */
+  .close-sidebar {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #000000;
+    cursor: pointer;
+  }
+
+  /* 主内容区域 */
+  .main-content {
+    width: 100%;
+    height: 100%;
+    padding-bottom: 80px;
+  }
+
+  .top-bar {
+    margin: 10px;
+    padding: 10px;
+  }
+
+  .settings-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .model-selector,
+  .kb-selector {
+    width: 100%;
+  }
+
+  .chat-messages {
+    padding: 10px;
+  }
+
+  .message {
+    max-width: 100%;
+  }
+
+  .message-content {
+    max-width: 85%;
+    font-size: 14px;
+  }
+
+  .input-area {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 8px;
+  }
+
+  .input-container {
+    padding: 8px 40px 8px 12px;
+  }
+
+  textarea {
+    font-size: 14px;
+    max-height: 100px;
+  }
+
+  .send-button {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* 暗色主题在移动端的适配 */
+/* @media screen and (max-width: 340px) and (prefers-color-scheme: dark) {
+  .sidebar {
+    background: #1f2937;
+    border-bottom-color: #374151;
+  }
+
+  .history-trigger {
+    background: #1f2937;
+    border-color: #e5e7eb;
+  }
+} */
+
+.nav-trigger {
+  display: none;  /* 默认隐藏 */
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.nav-trigger i {
+  font-size: 20px;
+  color: #374151;
+}
+
+.nav-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  z-index: 998;
+}
+
+.nav-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.nav-menu {
+  position: fixed;
+  top: 0;
+  left: -100%;
+  width: 300px;
+  height: 100%;
+  background: #ffffff;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+  transition: left 0.3s ease;
+  z-index: 999;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-menu.active {
+  left: 0;
+}
+
+.close-nav {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 20px;
+  color: #374151;
+}
+
+.nav-header {
+  margin-bottom: 20px;
+}
+
+.nav-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+@media screen and (max-width: 340px) {
+  .nav-trigger {
+    display: flex;  /* 在移动端显示 */
+  }
+
+  .nav-overlay {
+    display: block;  /* 在移动端显示 */
+  }
+
+  .nav-menu {
+    width: 85%;  /* 移动端导航菜单宽度 */
+  }
+
+  .sidebar {
+    display: none;  /* 隐藏原始侧边栏 */
+  }
+
+  .main-content {
+    margin-left: 0;  /* 移除侧边栏空间 */
+    padding-top: 60px;  /* 为导航按钮留出空间 */
+  }
+
+  .input-area {
+    left: 0;  /* 调整输入区域位置 */
+  }
+}
+
+/* 暗色主题支持 */
+/* @media (prefers-color-scheme: dark) {
+  .nav-trigger {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .nav-trigger i {
+    color: #e5e7eb;
+  }
+
+  .nav-menu {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .close-nav {
+    background: #374151;
+    color: #e5e7eb;
+  }
+} */
 </style> 

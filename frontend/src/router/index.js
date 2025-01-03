@@ -8,6 +8,7 @@ import SystemSettings from '../components/admin/SystemSettings.vue'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import { authStore } from '../store/auth'
 import { hasPermission, Permissions } from '../utils/permissions'
+import UrlRegister from '../components/UrlRegister.vue'
 
 const routes = [
   {
@@ -50,13 +51,19 @@ const routes = [
     ]
   },
   {
-    path: '/admin/test',
-    name: 'AdminTest',
-    component: () => import('../components/admin/AdminTest.vue'),
-    meta: { 
-      requiresAuth: true,
-      requiresAdmin: true
-    }
+    path: '/admin/feedback',
+    component: () => import('../components/admin/FeedbackList.vue'),
+    meta: { requiresAdmin: true }
+  },
+  {
+    path: '/admin/url-params-test',
+    component: () => import('../components/admin/UrlParamsTester.vue'),
+    meta: { requiresAdmin: true }
+  },
+  {
+    path: '/url-register',
+    name: 'UrlRegister',
+    component: UrlRegister
   }
 ]
 

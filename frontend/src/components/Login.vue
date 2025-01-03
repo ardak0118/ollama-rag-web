@@ -40,66 +40,58 @@
 </template>
 
 <script>
+import { ref } from 'vue'
+import { api } from '../utils/api'
 import { authStore } from '../store/auth'
+import { useRouter } from 'vue-router'
 
 export default {
   name: 'Login',
-  data() {
-    return {
-      username: '',
-      password: '',
-      error: null,
-      isLoading: false
-    }
-  },
-  methods: {
-    async handleLogin() {
-      this.error = null;
-      this.isLoading = true;
-      
+  setup() {
+    const username = ref('')
+    const password = ref('')
+    const error = ref('')
+    const isLoading = ref(false)
+    const router = useRouter()
+
+    const handleLogin = async () => {
+      if (!username.value || !password.value) {
+        error.value = '请输入用户名和密码'
+        return
+      }
+
+      isLoading.value = true
+      error.value = ''
+
       try {
-        const formData = new URLSearchParams();
-        formData.append('username', this.username);
-        formData.append('password', this.password);
-        formData.append('grant_type', 'password');
+        const response = await api.post('/api/auth/login', {
+          username: username.value,
+          password: password.value
+        })
 
-        console.log('Sending login request:', {
-          username: this.username,
-          grant_type: 'password'
-        });
-
-        const response = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: formData
-        });
-
-        const data = await response.json();
-        console.log('Login response status:', response.status);
+        const data = await response.json()
         
         if (response.ok) {
-          console.log('Login successful, token:', data.access_token);
-          authStore.setToken(data.access_token);
-          try {
-            await authStore.fetchCurrentUser();
-            const redirect = this.$route.query.redirect || '/';
-            this.$router.push(redirect);
-          } catch (err) {
-            console.error('Failed to fetch user data:', err);
-            this.error = '获取用户信息失败';
-          }
+          // 保存 token 和用户信息
+          authStore.setAuth(data.access_token, data.user)
+          router.push('/')
         } else {
-          console.error('Login failed:', data);
-          this.error = data.detail || '登录失败';
+          error.value = data.detail?.message || '登录失败，请检查用户名和密码'
         }
       } catch (err) {
-        console.error('Login request failed:', err);
-        this.error = '登录请求失败，请稍后重试';
+        console.error('Login request failed:', err)
+        error.value = err.message || '登录失败，请稍后重试'
       } finally {
-        this.isLoading = false;
+        isLoading.value = false
       }
+    }
+
+    return {
+      username,
+      password,
+      error,
+      isLoading,
+      handleLogin
     }
   }
 }

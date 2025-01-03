@@ -1,5 +1,5 @@
 <template>
-  <div class="register-container">
+  <div class="register-container mobile-adaptive">
     <div class="register-box">
       <h2>注册</h2>
       <form @submit.prevent="handleRegister">
@@ -200,5 +200,35 @@ export default {
 
 .login-link a:hover {
   text-decoration: underline;
+}
+
+/* 添加移动端适配 */
+@media (max-width: 768px) {
+  .register-container {
+    padding: 16px;
+    background-color: #ffffff;
+  }
+
+  .register-box {
+    box-shadow: none;
+    padding: 16px;
+    width: 100%;
+  }
+
+  .form-group input {
+    padding: 12px;
+    font-size: 16px;
+  }
+
+  .register-btn {
+    padding: 12px;
+    font-size: 16px;
+    margin-top: 24px;
+  }
+
+  h2 {
+    font-size: 24px;
+    margin-bottom: 24px;
+  }
 }
 </style> 

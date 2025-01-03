@@ -1,0 +1,57 @@
+/* 移动端全局样式 */
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* 改善移动端滚动体验 */
+  .smooth-scroll {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* 防止长按选择文本 */
+  .no-select {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* 移动端友好的按钮尺寸 */
+  button,
+  .button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 移动端友好的输入框 */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+    padding: 12px;
+  }
+
+  /* 移动端模态框样式 */
+  .modal-overlay {
+    align-items: flex-end;
+  }
+
+  .modal-content {
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* 添加暗色模式支持 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #1a1a1a;
+    --text-color: #e5e5e5;
+    --border-color: #333;
+  }
+}

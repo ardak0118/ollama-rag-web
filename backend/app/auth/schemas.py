@@ -16,12 +16,18 @@ class UserCreate(UserBase):
     is_active: Optional[bool] = True
 
 # 用户信息模型
-class User(UserBase):
+class User(BaseModel):
     id: int
+    username: str
+    email: str
+    is_active: bool
     is_admin: bool
+    can_manage_kb: bool
+    last_login: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 # 数据库中的用户模型
 class UserInDB(UserBase):
@@ -72,3 +78,8 @@ class UserUpdate(BaseModel):
 
 class BatchUserCreate(BaseModel):
     users: List[UserCreate]
+
+# 添加 URL 参数注册模型
+class UrlRegisterParams(BaseModel):
+    name: str
+    mobile: str

@@ -1,11 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, status
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from ..auth.database import get_db
 from ..auth.routes import get_current_user
 from ..auth.permissions import check_permissions
 from ..auth.models import User
 from .models import KnowledgeBase, Document
 from . import schemas
+from ..pdf_processor import pdf_processor
 import logging
 import os
 from typing import Optional
@@ -13,68 +15,173 @@ from typing import Optional
 kb_router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# 确保上传目录存在
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@kb_router.get("/knowledge-bases")
+# 修改路由前缀
+@kb_router.get("/knowledge-base")
 async def list_knowledge_bases(
-    current_user: User = Depends(check_permissions(["kb:view"])),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """获取知识库列表"""
     try:
-        kbs = db.query(KnowledgeBase).all()
-        logger.info(f"Found {len(kbs)} knowledge bases")
-        return kbs
+        query = db.query(KnowledgeBase)
+        if not current_user.is_admin:
+            # 非管理员只能看到激活的知识库
+            query = query.filter(KnowledgeBase.is_active == True)
+            
+        kbs = query.all()
+        
+        return [{
+            "id": kb.id,
+            "name": kb.name,
+            "created_at": kb.created_at,
+            "is_active": kb.is_active,
+            "document_count": len(kb.documents)
+        } for kb in kbs]
+        
     except Exception as e:
         logger.error(f"Error listing knowledge bases: {str(e)}")
         raise HTTPException(
-            status_code=500,
-            detail=f"Error listing knowledge bases: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
 
-@kb_router.get("/knowledge-bases/{kb_id}")
-async def get_knowledge_base(
-    kb_id: int,
-    current_user: User = Depends(check_permissions(["kb:view"])),
-    db: Session = Depends(get_db)
-):
-    """获取知识库详情"""
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    return kb
+def check_kb_permission(user: User):
+    """检查用户是否有知识库管理权限"""
+    if not (user.is_admin or user.can_manage_kb):
+        raise HTTPException(
+            status_code=403,
+            detail="您没有权限管理知识库"
+        )
 
-@kb_router.post("/knowledge-bases")
+# 添加 Pydantic 模型
+class KnowledgeBaseCreate(BaseModel):
+    name: str
+
+    class Config:
+        orm_mode = True
+
+@kb_router.post("/knowledge-base")
 async def create_knowledge_base(
-    kb: schemas.KnowledgeBaseCreate,
-    current_user: User = Depends(check_permissions(["kb:manage"])),
+    name: str = Form(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """创建知识库"""
+    if not current_user.is_admin and not current_user.can_manage_kb:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No permission to create knowledge base"
+        )
+        
     try:
-        db_kb = KnowledgeBase(**kb.dict())
-        db.add(db_kb)
+        kb = KnowledgeBase(name=name)
+        db.add(kb)
         db.commit()
-        db.refresh(db_kb)
-        logger.info(f"Created knowledge base: {db_kb.id}")
-        return db_kb
+        db.refresh(kb)
+        
+        return {
+            "id": kb.id,
+            "name": kb.name,
+            "created_at": kb.created_at
+        }
+        
     except Exception as e:
         logger.error(f"Error creating knowledge base: {str(e)}")
         db.rollback()
         raise HTTPException(
-            status_code=500,
-            detail=f"Error creating knowledge base: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
 
-@kb_router.get("/knowledge-bases/{kb_id}/documents")
+@kb_router.post("/knowledge-base/{kb_id}/upload")
+async def upload_document(
+    kb_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """上传文档到知识库"""
+    logger.info(f"Received upload request for kb_id: {kb_id}")
+    logger.info(f"File info: name={file.filename}, content_type={file.content_type}")
+
+    try:
+        # 检查知识库是否存在
+        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+        if not kb:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Knowledge base {kb_id} not found"
+            )
+            
+        # 检查权限
+        if not current_user.is_admin and not current_user.can_manage_kb:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No permission to upload documents"
+            )
+            
+        # 检查文件类型
+        allowed_types = ['.txt', '.pdf', '.md', '.doc', '.docx']
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type not allowed. Allowed types: {', '.join(allowed_types)}"
+            )
+            
+        # 读取文件内容
+        content = await file.read()
+        
+        # 处理文件内容
+        if file_ext == '.pdf':
+            # PDF 处理
+            text_content = await pdf_processor.process_pdf(content)
+        else:
+            # 假设是文本文件
+            try:
+                text_content = content.decode('utf-8')
+            except UnicodeDecodeError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File encoding not supported"
+                )
+            
+        # 创建文档记录
+        document = Document(
+            name=file.filename,
+            content=text_content,
+            knowledge_base_id=kb_id
+        )
+        
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        
+        logger.info(f"Document created: id={document.id}")
+        
+        return {
+            "message": "Document uploaded successfully",
+            "document_id": document.id
+        }
+        
+    except HTTPException as e:
+        logger.error(f"HTTP error during upload: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading document: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading document: {str(e)}"
+        )
+
+@kb_router.get("/knowledge-base/{kb_id}/documents")
 async def list_documents(
     kb_id: int,
     current_user: User = Depends(check_permissions(["doc:view"])),
     db: Session = Depends(get_db)
 ):
-    """获取知识库下的文档��表"""
+    """获取知识库下的文档列表"""
     try:
         docs = db.query(Document).filter(Document.knowledge_base_id == kb_id).all()
         return docs
@@ -85,203 +192,46 @@ async def list_documents(
             detail=f"Error listing documents: {str(e)}"
         )
 
-@kb_router.post("/knowledge-bases/{kb_id}/documents")
-async def upload_document(
+@kb_router.get("/knowledge-base/{kb_id}")
+async def get_knowledge_base(
     kb_id: int,
-    file: UploadFile = File(...),
-    current_user: User = Depends(check_permissions(["doc:manage"])),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """上传文档到知识库"""
+    """获取知识库详情"""
     try:
-        # 检查知识库是否存在
+        # 获取知识库信息
         kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
         if not kb:
-            raise HTTPException(status_code=404, detail="Knowledge base not found")
-
-        logger.info(f"Processing file upload: {file.filename}")
-        
-        # 处理文件上传
-        try:
-            content = await file.read()
-            logger.info(f"File read successfully, size: {len(content)} bytes")
-        except Exception as read_error:
-            logger.error(f"Error reading file: {str(read_error)}")
             raise HTTPException(
-                status_code=400,
-                detail=f"Error reading file: {str(read_error)}"
-            )
-        
-        try:
-            # 根据文件类型处理内容
-            if file.filename.lower().endswith('.pdf'):
-                # PDF文件保存为二进制
-                file_path = os.path.join(UPLOAD_DIR, f"{kb_id}_{file.filename}")
-                with open(file_path, 'wb') as f:
-                    f.write(content)
-                content_str = f"[PDF file saved at: {file_path}]"
-                logger.info(f"PDF file saved: {file_path}")
-            else:
-                # 尝试不同的编码方式
-                encodings = ['utf-8', 'gbk', 'latin1']
-                content_str = None
-                for encoding in encodings:
-                    try:
-                        content_str = content.decode(encoding)
-                        logger.info(f"File decoded successfully with {encoding}")
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                
-                if content_str is None:
-                    content_str = "[Binary content]"
-                    logger.warning("Could not decode file content with any encoding")
-            
-            # 创建文档记录
-            doc = Document(
-                name=file.filename,
-                content=content_str,
-                knowledge_base_id=kb_id
+                status_code=404,
+                detail="Knowledge base not found"
             )
             
-            logger.info("Adding document to database")
-            db.add(doc)
-            db.commit()
-            db.refresh(doc)
+        # 获取该知识库下的所有文档
+        documents = db.query(Document)\
+            .filter(Document.knowledge_base_id == kb_id)\
+            .order_by(Document.created_at.desc())\
+            .all()
             
-            logger.info(f"Document uploaded successfully: {doc.id}")
-            return {
-                "status": "success",
-                "document": {
-                    "id": doc.id,
-                    "name": doc.name,
-                    "created_at": doc.created_at
-                }
-            }
-            
-        except Exception as process_error:
-            logger.error(f"Error processing file content: {str(process_error)}")
-            if 'db' in locals() and doc in locals():
-                db.rollback()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error processing file: {str(process_error)}"
-            )
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in upload_document: {str(e)}")
-        if 'db' in locals():
-            db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error during upload: {str(e)}"
-        )
-
-@kb_router.put("/knowledge-bases/{kb_id}")
-async def update_knowledge_base(
-    kb_id: int,
-    kb_update: schemas.KnowledgeBaseUpdate,
-    current_user: User = Depends(check_permissions(["kb:manage"])),
-    db: Session = Depends(get_db)
-):
-    """更新知识库 - 仅管理员"""
-    db_kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not db_kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    
-    for key, value in kb_update.dict(exclude_unset=True).items():
-        setattr(db_kb, key, value)
-    
-    db.commit()
-    db.refresh(db_kb)
-    return db_kb
-
-@kb_router.delete("/knowledge-bases/{kb_id}")
-async def delete_knowledge_base(
-    kb_id: int,
-    current_user: User = Depends(check_permissions(["kb:manage"])),
-    db: Session = Depends(get_db)
-):
-    """删除知识库 - 仅管理员"""
-    db_kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if not db_kb:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
-    
-    db.delete(db_kb)
-    db.commit()
-    return {"status": "success"}
-
-@kb_router.delete("/knowledge-bases/{kb_id}/documents/{doc_id}")
-async def delete_document(
-    kb_id: int,
-    doc_id: int,
-    current_user: User = Depends(check_permissions(["doc:manage"])),
-    db: Session = Depends(get_db)
-):
-    """删除文档 - 仅管理员"""
-    doc = db.query(Document).filter(
-        Document.id == doc_id,
-        Document.knowledge_base_id == kb_id
-    ).first()
-    
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    db.delete(doc)
-    db.commit()
-    return {"status": "success"}
-
-@kb_router.get("/knowledge-bases/{kb_id}/documents/{doc_id}")
-async def get_document(
-    kb_id: int,
-    doc_id: int,
-    current_user: User = Depends(check_permissions(["doc:view"])),
-    db: Session = Depends(get_db)
-):
-    """获取单个文档的详细内容"""
-    try:
-        # 检查知识库是否存在
-        kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-        if not kb:
-            raise HTTPException(status_code=404, detail="Knowledge base not found")
-            
-        # 获取文档
-        doc = db.query(Document).filter(
-            Document.id == doc_id,
-            Document.knowledge_base_id == kb_id
-        ).first()
-        
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-        
-        # 如果是 PDF 文件，需要读取文件内容
-        if doc.file_path and doc.file_path.lower().endswith('.pdf'):
-            try:
-                with open(doc.file_path, 'rb') as f:
-                    from pdfminer.high_level import extract_text
-                    content = extract_text(f)
-            except Exception as e:
-                logger.error(f"Error reading PDF file: {str(e)}")
-                content = "Error: Could not read PDF content"
-        else:
-            content = doc.content
-            
+        # 构建响应
         return {
-            "id": doc.id,
-            "name": doc.name,
-            "content": content,
-            "created_at": doc.created_at,
-            "updated_at": doc.updated_at,
-            "file_path": doc.file_path
+            "id": kb.id,
+            "name": kb.name,
+            "created_at": kb.created_at,
+            "documents": [{
+                "id": doc.id,
+                "name": doc.name,
+                "content": doc.content,
+                "created_at": doc.created_at
+            } for doc in documents]
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting document: {str(e)}")
+        logger.error(f"Error getting knowledge base: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error getting document: {str(e)}"
+            detail=f"Error getting knowledge base: {str(e)}"
         )
