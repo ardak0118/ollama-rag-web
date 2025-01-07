@@ -134,7 +134,7 @@ export default {
 }
 
 .username {
-  color: #374151;
+  color: #000000;
   font-weight: 500;
 }
 
@@ -190,7 +190,7 @@ export default {
   }
 
   .username {
-    color: #e5e7eb;
+    color: #000000;
   }
 
   .role-badge {
@@ -252,7 +252,7 @@ export default {
   }
 
   .username {
-    max-width: 70px;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -300,7 +300,7 @@ export default {
   }
 
   .username {
-    max-width: 50px;
+    max-width: 120px;
   }
 
   .logout-btn span {

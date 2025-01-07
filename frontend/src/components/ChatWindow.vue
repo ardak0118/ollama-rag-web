@@ -155,6 +155,19 @@
             </div>
           </div>
         </div>
+
+        <!-- 加载状态消息 -->
+        <div v-if="isLoading" class="message assistant">
+          <div class="message-header">
+            <div class="avatar assistant">AI</div>
+            <div class="role-name">{{ selectedModel }}</div>
+          </div>
+          <div class="message-content thinking">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+        </div>
       </div>
 
       <!-- 输入区域 -->
@@ -224,6 +237,19 @@ export default {
     selectedKnowledgeBaseName() {
       const kb = this.knowledgeBases.find(kb => kb.id === this.selectedKnowledgeBase)
       return kb ? kb.name : ''
+    },
+
+    // 计算属性：显示的消息列表（包括加载状态）
+    displayMessages() {
+      let msgs = [...this.messages];
+      if (this.isLoading) {
+        msgs.push({
+          role: 'assistant',
+          content: '正在思考中...',
+          isLoading: true
+        });
+      }
+      return msgs;
     }
   },
   methods: {
@@ -1659,4 +1685,89 @@ textarea::placeholder {
     color: #e5e7eb;
   }
 } */
+
+.ai-thinking {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 14px;
+}
+
+.dots {
+  display: flex;
+  gap: 4px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  background: #666;
+  border-radius: 50%;
+  display: inline-block;
+  animation: dot-bounce 1.4s infinite ease-in-out both;
+}
+
+.dot:nth-child(1) { animation-delay: -0.32s; }
+.dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+/* 添加加载状态的样式 */
+.message.assistant[data-loading="true"] {
+  opacity: 0.7;
+}
+
+.message.assistant[data-loading="true"] .message-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message.assistant[data-loading="true"] .message-text::after {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+/* 添加加载动画样式 */
+.thinking {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+}
+
+.thinking .dot {
+  width: 8px;
+  height: 8px;
+  background: #666;
+  border-radius: 50%;
+  display: inline-block;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.thinking .dot:nth-child(1) { animation-delay: -0.32s; }
+.thinking .dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { 
+    transform: scale(0);
+  }
+  40% { 
+    transform: scale(1);
+  }
+}
 </style> 

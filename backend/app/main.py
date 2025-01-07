@@ -68,7 +68,16 @@ def init_chat_db():
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
         
-        # 统一的对话表
+        # 1. 创建知识库表
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_bases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 2. 创建普通对话表
         c.execute('''
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,23 +85,33 @@ def init_chat_db():
                 message TEXT NOT NULL,
                 role TEXT NOT NULL,
                 model TEXT NOT NULL,
-                kb_id INTEGER DEFAULT NULL,    -- 知识库ID，为空表示普通对话
-                sources TEXT DEFAULT NULL,     -- 知识库引用源
+                kb_id INTEGER DEFAULT NULL,
+                sources TEXT DEFAULT NULL,
+                user_id INTEGER NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (kb_id) REFERENCES knowledge_bases (id)
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
         
-        # 知识库表
+        # 3. 创建 RAG 对话表
         c.execute('''
-            CREATE TABLE IF NOT EXISTS knowledge_bases (
+            CREATE TABLE IF NOT EXISTS rag_conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                conversation_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                role TEXT NOT NULL,
+                model TEXT NOT NULL,
+                kb_id INTEGER NOT NULL,
+                sources TEXT DEFAULT NULL,
+                user_id INTEGER NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (kb_id) REFERENCES knowledge_bases (id),
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
         
-        # 文档表
+        # 4. 创建文档表
         c.execute('''
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,19 +133,92 @@ def init_chat_db():
         if conn:
             conn.close()
 
+def migrate_existing_data():
+    """检查数据库设置"""
+    try:
+        conn = sqlite3.connect(DATABASE_URL)
+        c = conn.cursor()
+        
+        # 检查users表是否存在并正确设置
+        c.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='users'
+        ''')
+        if not c.fetchone():
+            logger.error("Users table does not exist")
+            return
+            
+        # 检查admin用户是否存在
+        c.execute('SELECT id FROM users WHERE username = ?', ('admin',))
+        if not c.fetchone():
+            logger.error("Admin user not found")
+            return
+            
+        logger.info("Database check completed successfully")
+    except Exception as e:
+        logger.error(f"Error checking database: {str(e)}")
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 # 在应用启动时执行初始化
 @app.on_event("startup")
 async def startup_event():
     """应用启动时的事件处理"""
     try:
-        # 初始化认证数据库
-        init_db()
-        # 初始化聊天数据库
+        # 1. 确保数据库目录存在
+        os.makedirs(os.path.dirname(DATABASE_URL), exist_ok=True)
+        
+        # 2. 删除现有数据库文件（如果存在）
+        if os.path.exists(DATABASE_URL):
+            os.remove(DATABASE_URL)
+            logger.info("Removed existing database file")
+        
+        # 3. 创建新的数据库连接
+        conn = sqlite3.connect(DATABASE_URL)
+        c = conn.cursor()
+        
+        # 4. 创建 users 表
+        c.execute('''
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                is_admin BOOLEAN DEFAULT FALSE,
+                can_manage_kb BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_login TIMESTAMP
+            )
+        ''')
+        logger.info("Users table created")
+        
+        # 5. 创建默认管理员用户
+        from .auth.utils import get_password_hash
+        try:
+            c.execute('''
+                INSERT INTO users 
+                (username, email, hashed_password, is_admin, is_active, can_manage_kb)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', ('admin', 'admin@example.com', get_password_hash('admin'), True, True, True))
+            conn.commit()
+            logger.info("Admin user created")
+        except Exception as e:
+            logger.warning(f"Admin user creation warning: {e}")
+        
+        # 6. 初始化聊天数据库
         init_chat_db()
-        logger.info("All databases initialized successfully")
+        
+        logger.info("Application started successfully")
+        
     except Exception as e:
         logger.error(f"Error during startup: {str(e)}")
         raise
+    finally:
+        if conn:
+            conn.close()
 
 # 添加认证路由
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
@@ -157,8 +249,8 @@ class ChatRequest(BaseModel):
     kb_id: int
     model: str = "qwen2.5:latest"
 
-def save_message(conversation_id: str, message: str, role: str, model: str, kb_id: Optional[int] = None, sources: List[Dict] = None):
-    """统一的息保存函数"""
+def save_message(conversation_id: str, message: str, role: str, model: str, user_id: int, kb_id: Optional[int] = None, sources: List[Dict] = None):
+    """统一的消息保存函数"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
@@ -167,19 +259,18 @@ def save_message(conversation_id: str, message: str, role: str, model: str, kb_i
             # 保存知识库对话消息
             c.execute('''
                 INSERT INTO rag_conversations 
-                (conversation_id, message, role, model, kb_id, sources, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (conversation_id, message, role, model, kb_id, json.dumps(sources or [])))
+                (conversation_id, message, role, model, kb_id, sources, user_id, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (conversation_id, message, role, model, kb_id, json.dumps(sources or []), user_id))
         else:
             # 保存普通对话消息
             c.execute('''
                 INSERT INTO conversations 
-                (conversation_id, message, role, model, timestamp)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ''', (conversation_id, message, role, model))
+                (conversation_id, message, role, model, user_id, timestamp)
+                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ''', (conversation_id, message, role, model, user_id))
             
         conn.commit()
-        logger.info(f"Message saved successfully for conversation {conversation_id}")
     except Exception as e:
         logger.error(f"Error saving message: {str(e)}")
         raise
@@ -189,12 +280,12 @@ def save_message(conversation_id: str, message: str, role: str, model: str, kb_i
 
 @app.get("/api/conversations")
 async def get_conversations(current_user: User = Depends(get_current_user)):
-    """获取所有对话历史，包括普通对话和知识库对话"""
+    """获取当前用户的所有对话历史"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
         
-        # 获取所有对话（普通对话和知识库对话）
+        # 只获取当前用户的对话
         c.execute('''
             SELECT 
                 conversation_id,
@@ -202,6 +293,7 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
                 MAX(timestamp) as last_time,
                 MIN(CASE WHEN role = 'user' THEN message ELSE NULL END) as first_message
             FROM conversations 
+            WHERE user_id = ?
             GROUP BY conversation_id
             
             UNION ALL
@@ -212,86 +304,96 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
                 MAX(timestamp) as last_time,
                 MIN(CASE WHEN role = 'user' THEN message ELSE NULL END) as first_message
             FROM rag_conversations 
+            WHERE user_id = ?
             GROUP BY conversation_id
             
             ORDER BY last_time DESC
-        ''')
+        ''', (current_user.id, current_user.id))
         
         conversations = []
         for row in c.fetchall():
             conv_id, kb_id, timestamp, first_message = row
-            
-            # 构建对话信息
-            title = first_message[:30] + "..." if first_message else "新对话"
-            
-            conversations.append({
-                "id": conv_id,
-                "title": title,
-                "type": "rag" if kb_id else "normal",
-                "kb_id": kb_id,
-                "timestamp": timestamp
-            })
+            if conv_id:  # 确保 conversation_id 不为空
+                title = first_message[:30] + "..." if first_message else "新对话"
+                
+                conversations.append({
+                    "id": conv_id,
+                    "title": title,
+                    "type": "rag" if kb_id else "normal",
+                    "kb_id": kb_id,
+                    "timestamp": timestamp
+                })
         
-        return {"conversations": conversations}
+        # 确保返回正确的数据结构
+        return {
+            "status": "success",
+            "conversations": conversations if conversations else [],
+            "total": len(conversations)
+        }
         
     except Exception as e:
         logger.error(f"Error getting conversations: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error getting conversations: {str(e)}"
-        )
+        # 返回更友好的错误响应
+        return {
+            "status": "error",
+            "conversations": [],
+            "error": str(e)
+        }
     finally:
         if conn:
             conn.close()
 
 @app.get("/api/conversations/{conversation_id}")
 async def get_conversation(conversation_id: str, current_user: User = Depends(get_current_user)):
-    """获取特定对话的消息"""
+    """获取当前用户的特定对话消息"""
     try:
         conn = sqlite3.connect(DATABASE_URL)
         c = conn.cursor()
         
-        # 首先检查是哪种类型的对话
-        c.execute('SELECT COUNT(*) FROM rag_conversations WHERE conversation_id = ?', (conversation_id,))
-        is_rag = c.fetchone()[0] > 0
+        # 检查对话是否属于当前用户
+        c.execute('''
+            SELECT COUNT(*) FROM (
+                SELECT user_id FROM conversations WHERE conversation_id = ? AND user_id = ?
+                UNION
+                SELECT user_id FROM rag_conversations WHERE conversation_id = ? AND user_id = ?
+            )
+        ''', (conversation_id, current_user.id, conversation_id, current_user.id))
         
-        if is_rag:
-            # 获取知识库对话消息
-            c.execute('''
-                SELECT message, role, model, sources, timestamp, kb_id
-                FROM rag_conversations
-                WHERE conversation_id = ?
-                ORDER BY timestamp
-            ''', (conversation_id,))
-            messages = [{
-                "content": msg[0],
-                "role": msg[1],
-                "model": msg[2],
-                "sources": json.loads(msg[3]) if msg[3] else [],
-                "timestamp": msg[4],
-                "kb_id": msg[5]
-            } for msg in c.fetchall()]
-        else:
-            # 获取普通对话消息
-            c.execute('''
-                SELECT message, role, model, timestamp
-                FROM conversations
-                WHERE conversation_id = ?
-                ORDER BY timestamp
-            ''', (conversation_id,))
-            messages = [{
-                "content": msg[0],
-                "role": msg[1],
-                "model": msg[2],
-                "timestamp": msg[3]
-            } for msg in c.fetchall()]
+        if c.fetchone()[0] == 0:
+            raise HTTPException(
+                status_code=403,
+                detail="You don't have permission to access this conversation"
+            )
+        
+        # 获取对话消息
+        c.execute('''
+            SELECT message, role, model, sources, timestamp, kb_id
+            FROM rag_conversations
+            WHERE conversation_id = ? AND user_id = ?
+            UNION ALL
+            SELECT message, role, model, NULL as sources, timestamp, NULL as kb_id
+            FROM conversations
+            WHERE conversation_id = ? AND user_id = ?
+            ORDER BY timestamp
+        ''', (conversation_id, current_user.id, conversation_id, current_user.id))
+        
+        messages = [{
+            "content": msg[0],
+            "role": msg[1],
+            "model": msg[2],
+            "sources": json.loads(msg[3]) if msg[3] else [],
+            "timestamp": msg[4],
+            "kb_id": msg[5]
+        } for msg in c.fetchall()]
         
         return {
             "conversation_id": conversation_id,
             "messages": messages,
-            "type": "rag" if is_rag else "normal"
+            "type": "rag" if any(msg["kb_id"] for msg in messages) else "normal"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting conversation: {str(e)}")
         raise HTTPException(
@@ -449,6 +551,7 @@ async def chat(chat_message: ChatMessage, current_user: User = Depends(get_curre
             chat_message.message,
             "user",
             chat_message.model,
+            current_user.id,
             chat_message.kb_id
         )
 
@@ -464,7 +567,7 @@ async def chat(chat_message: ChatMessage, current_user: User = Depends(get_curre
             sources = result.get("sources", [])
         else:
             # 普通 LLM 对话
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=100.0) as client:
                 ollama_response = await client.post(
                     "http://localhost:11434/api/generate",
                     json={
@@ -483,6 +586,7 @@ async def chat(chat_message: ChatMessage, current_user: User = Depends(get_curre
             response,
             "assistant",
             chat_message.model,
+            current_user.id,
             chat_message.kb_id,
             sources
         )

@@ -549,7 +549,6 @@ async def delete_user(
             status_code=500,
             detail=f"Error deleting user: {str(e)}"
         ) 
-
 @admin_router.post("/test-url")
 async def test_url(
     url: str,
