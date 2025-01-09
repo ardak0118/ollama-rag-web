@@ -97,15 +97,16 @@ export default {
     const testAdminAPI = async () => {
       try {
         const response = await api.get('/api/admin/test')
-        if (!response.ok) {
+        if (response.ok) {
+          const data = await response.json()
+          testResults.value.push({
+            success: true,
+            message: `管理员 API 测试成功: ${data.message}`
+          })
+        } else {
           const errorData = await response.json()
           throw new Error(errorData.detail || 'Admin API test failed')
         }
-        const data = await response.json()
-        testResults.value.push({
-          success: true,
-          message: `管理员 API 测试成功: ${data.message}`
-        })
       } catch (error) {
         console.error('Failed to test admin API:', error)
         testResults.value.push({
@@ -119,8 +120,7 @@ export default {
       try {
         const response = await api.get('/api/admin/stats')
         if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(JSON.stringify(errorData))
+          throw new Error('Failed to fetch stats')
         }
         stats.value = await response.json()
       } catch (error) {
@@ -129,8 +129,11 @@ export default {
       }
     }
     
+    // 组件挂载时自动获取统计数据
     onMounted(async () => {
-      await refreshStats()
+      if (authStore.isAdmin) {
+        await refreshStats()
+      }
     })
     
     return {

@@ -61,6 +61,14 @@ const routes = [
     meta: { requiresAdmin: true }
   },
   {
+    path: '/admin/test',
+    component: () => import('../components/admin/AdminTest.vue'),
+    meta: { 
+      requiresAuth: true,
+      requiresAdmin: true 
+    }
+  },
+  {
     path: '/url-register',
     name: 'UrlRegister',
     component: UrlRegister

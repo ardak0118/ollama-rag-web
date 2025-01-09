@@ -1,6 +1,6 @@
 class Api {
   constructor() {
-    this.baseUrl = ''
+    this.baseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
   }
 
   async get(endpoint) {

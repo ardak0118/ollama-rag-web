@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 import chardet
 from datetime import datetime, timedelta
 import httpx
+from sqlalchemy import func
 
 admin_router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -317,44 +318,38 @@ async def get_admin_stats(
 
     try:
         # 获取用户统计
-        total_users = db.query(User).count()
-        active_users = db.query(User).filter(User.is_active == True).count()
-        admin_users = db.query(User).filter(User.is_admin == True).count()
+        total_users = db.query(func.count(User.id)).scalar()
+        admin_users = db.query(func.count(User.id)).filter(User.is_admin == True).scalar()
+        active_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar()
         
-        # 获取最近注册用户
+        # 获取最近注册的用户
         recent_users = db.query(User).order_by(User.created_at.desc()).limit(5).all()
-        recent_users_list = [
-            {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "created_at": user.created_at.isoformat() if user.created_at else None
-            }
-            for user in recent_users
-        ]
-
-        # 获取最近登录用户
-        recent_logins = db.query(User).filter(User.last_login != None)\
-            .order_by(User.last_login.desc()).limit(5).all()
-        recent_logins_list = [
-            {
-                "id": user.id,
-                "username": user.username,
-                "last_login": user.last_login.isoformat() if user.last_login else None
-            }
-            for user in recent_logins
-        ]
-
+        
+        # 获取最近登录的用户
+        recent_logins = db.query(User)\
+            .filter(User.last_login.isnot(None))\
+            .order_by(User.last_login.desc())\
+            .limit(5).all()
+            
         return {
             "user_stats": {
                 "total": total_users,
-                "active": active_users,
-                "admin": admin_users
+                "admin": admin_users,
+                "active": active_users
             },
-            "recent_users": recent_users_list,
-            "recent_logins": recent_logins_list
+            "recent_users": [{
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "created_at": user.created_at
+            } for user in recent_users],
+            "recent_logins": [{
+                "id": user.id,
+                "username": user.username,
+                "last_login": user.last_login
+            } for user in recent_logins]
         }
-
+        
     except Exception as e:
         logger.error(f"Error getting admin stats: {str(e)}")
         raise HTTPException(
@@ -364,30 +359,10 @@ async def get_admin_stats(
 
 @admin_router.get("/test")
 async def test_admin_api(current_user: User = Depends(get_current_user)):
-    """测试管理 API"""
+    """测试管理员 API"""
     if not current_user.is_admin:
-        raise HTTPException(
-            status_code=403,
-            detail="Only administrators can access this endpoint"
-        )
-
-    try:
-        return {
-            "status": "success",
-            "message": "Admin API is working",
-            "user": {
-                "id": current_user.id,
-                "username": current_user.username,
-                "is_admin": current_user.is_admin
-            },
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error testing admin API: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error testing admin API: {str(e)}"
-        ) 
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return {"message": "管理员 API 测试成功"}
 
 @admin_router.put("/users/{user_id}/kb-permission")
 async def update_user_kb_permission(

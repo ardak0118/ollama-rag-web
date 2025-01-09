@@ -97,9 +97,9 @@
       <div class="top-bar">
         <div class="chat-settings">
           <div class="settings-row">
-            <div class="model-selector">
+            <div class="model-selector" style="display: none;">
               <label>对话模型：</label>
-              <select v-model="selectedModel" :disabled="isLoading">
+              <select v-model="selectedModel" :disabled="isLoading"> <!--style="display: none;"隐藏代码 -->
                 <option v-for="model in availableModels" 
                         :key="model" 
                         :value="model">
@@ -132,7 +132,7 @@
             <div class="avatar" :class="message.role">
               {{ message.role === 'user' ? '我' : 'AI' }}
             </div>
-            <div class="role-name">{{ message.role === 'user' ? '' : selectedModel }}</div>
+            <div class="role-name">{{ message.role === 'user' ? '' : formatModelName(selectedModel) }}</div>
             <div v-if="message.timestamp" class="message-time">
               {{ formatTime(message.timestamp) }}
             </div>
@@ -160,7 +160,7 @@
         <div v-if="isLoading" class="message assistant">
           <div class="message-header">
             <div class="avatar assistant">AI</div>
-            <div class="role-name">{{ selectedModel }}</div>
+            <div class="role-name">{{ formatModelName(selectedModel) }}</div>
           </div>
           <div class="message-content thinking">
             <span class="dot"></span>
@@ -192,6 +192,10 @@
             <i class="fas fa-paper-plane"></i>
           </button>
         </div>
+         <!-- 免责声明 -->
+          <div class="disclaimer">
+            小巴助手也可能会生成错误信息，请核查重要信息。
+          </div>
       </div>
     </div>
   </div>
@@ -486,6 +490,12 @@ export default {
     },
     // 格式化模型名称显示
     formatModelName(name) {
+      // 先打印出实际的模型名称，看看是否真的是 'qwen2.5:latest'
+      // console.log('Actual model name:', name);
+      // 将 qwen2.5:latest 显示为 "小巴助手"
+      if (name === 'qwen2.5:latest') {
+        return '小巴助手'
+      }
       if (!name || typeof name !== 'string') {
         return 'Unknown Model';
       }
@@ -1770,4 +1780,16 @@ textarea::placeholder {
     transform: scale(1);
   }
 }
+
+/* 添加免责声明样式 */
+.disclaimer {
+  font-size: 12px;
+  color: #7a7a7a;
+  text-align: center;
+  padding: 8px;
+  margin-top: 3px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
 </style> 
